@@ -1,0 +1,130 @@
+﻿<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="initial-scale=1.0,user-scalable=no,width=device-width">
+    <link rel="stylesheet" href="https://a.amap.com/jsapi_demos/static/demo-center/css/demo-center.css" />
+    <link rel="stylesheet" type="text/css" href="https://a.amap.com/jsapi_demos/static/demo-center/css/prety-json.css">
+    <link rel="stylesheet" href="https://cache.amap.com/lbs/static/main1119.css" />
+    <style>
+        html,body,#container {width: 100%;height: 100%;}
+        #container {cursor: crosshair !important;}
+    </style>
+    <title>高德地图铁路描点工具</title>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="myPageTop"><label>关键字：</label> <input id="tipinput" value="京广高速铁路" /></div>
+    <div class="input-card" style="width: 100px">
+        <button class="btn" onclick="railway.hide();polyEditor.open()" style="margin-bottom: 5px">开始编辑</button>
+        <button class="btn" onclick="polyEditor.close()">结束编辑</button><br />
+        <button class="btn" onclick="railway.setPath(path); railway.show();">预览</button>
+        <button class="btn" onclick="railway.hide();">结束预览</button><br />
+        <button class="btn" onclick="getJson()">获取JSON</button>
+    </div>
+    <script src="https://webapi.amap.com/maps?v=1.4.15&key=5fd0cd1426a0f83b2f303833a796c1f2&plugin=AMap.PolyEditor,AMap.PlaceSearch"></script>
+    <script type="text/javascript" src="https://a.amap.com/jsapi_demos/static/demo-center/js/jquery-1.11.1.min.js"></script>
+    <script type="text/javascript" src="https://a.amap.com/jsapi_demos/static/demo-center/js/underscore-min.js"></script>
+    <script type="text/javascript" src="https://a.amap.com/jsapi_demos/static/demo-center/js/backbone-min.js"></script>
+    <script type="text/javascript" src='https://a.amap.com/jsapi_demos/static/demo-center/js/prety-json.js'></script>
+    <script src="https://a.amap.com/jsapi_demos/static/demo-center/js/demoutils.js"></script>
+    <script>
+        // 初始化地图
+        var map = new AMap.Map("container", { resizeEnable: true });
+        map.setDefaultCursor("crosshair");
+        var path = [];
+        var polyline = new AMap.Polyline({
+            path: path,
+            strokeWeight: 1,
+        })
+        polyline.setMap(map)
+        // 缩放地图到合适的视野级别
+        map.setFitView([polyline])
+        var railway = new AMap.Polyline({
+            path: path,
+            isOutline: true,
+            outlineColor: '#ffeeff',
+            borderWeight: 1,
+            strokeColor: "#06525c",
+            strokeOpacity: 0.8,
+            strokeWeight: 6,
+            strokeStyle: "solid",
+            lineCap: 'round',
+            lineJoin: 'round',
+            cursor: 'pointer',
+            geodesic: true,
+            showDir: true,
+        })
+        railway.setMap(map)
+        var polyEditor = new AMap.PolyEditor(map, polyline)
+        polyEditor.on('addnode', function (event) {
+            log.info('触发事件：addnode')
+        })
+        polyEditor.on('adjust', function (event) {
+            log.info('触发事件：adjust')
+        })
+        polyEditor.on('removenode', function (event) {
+            log.info('触发事件：removenode')
+        })
+        polyEditor.on('end', function (event) {
+            log.info('触发事件： end')
+            // event.target 即为编辑后的折线对象
+        })
+        function getJson() {
+            //构建信息窗体中显示的内容
+            var info = [];
+            var pathJson = [];
+            for (var i = 0; i < path.length; i++) {
+                pathJson.push([path[i].lng, path[i].lat])
+            }
+            info.push("<div style=\"padding:7px 0px 0px 0px;\"><h4>路径经纬度</h4><textarea id='json_gis' rows='10' cols='50'>");
+            info.push(JSON.stringify(pathJson));
+            info.push("</textarea>");
+            info.push("<button class=\"btn\" onclick=\"setJson()\">导入已有数据</button>");
+            info.push("</div></div>");
+
+            infoWindow = new AMap.InfoWindow({ content: info.join("") });
+            infoWindow.open(map, map.getCenter());
+        }
+        function setJson() {
+            path = $.parseJSON($("#json_gis").val());
+            polyline.setPath(path);
+        }
+        function clickHandle(e) {
+            var pos = e.target.getPosition();
+            path.push(pos);
+            polyline.setPath(path);
+        };
+        // 获取搜索信息
+        function searchLocation(city, pageIndex, type) {
+            AMap.plugin('AMap.PlaceSearch', function () {
+                var placeSearch = new AMap.PlaceSearch({ city: city, pageIndex: pageIndex, type: type, pageSize: 50 });
+                placeSearch.search(keywords, function (status, result) {
+                    if (result.info == "TIP_CITIES") {//需要按城市继续搜索。
+                        for (var i = 0; i < result.cityList.length; i++) {
+                            if (result.cityList[i].count > 50) console.log(result.cityList[i].citycode + result.cityList[i].name);
+                            searchLocation(result.cityList[i].citycode, 0, type)
+                        }
+                    }
+                    else {
+                        // 搜索成功时，result即是对应的匹配数据
+                        for (var i = 0; i < result.poiList.pois.length; i++) {
+                            var o = result.poiList.pois[i].location;
+                            var marker = new AMap.Marker({ position: new AMap.LngLat(o.lng, o.lat), clickable: true, });
+                            AMap.event.addListener(marker, 'click', clickHandle);
+                            marker.setMap(map);
+                        }
+                    }
+                })
+            })
+        }
+        $("#tipinput").keydown(function (e) {//当按下按键时
+            if (e.which == 13) {
+                keywords = $("#tipinput").val();
+                searchLocation("", 1, 190311/*铁路190311 e.poi.typecode*/);
+            }
+        });
+    </script>
+</body>
+</html>
